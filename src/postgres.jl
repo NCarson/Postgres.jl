@@ -54,7 +54,8 @@ function require_connection(ptr::ConnPtr)
     end
     s = status(ptr)
     if s != :ok
-        throw(PostgresError("not connected to database: $s"))
+        msg = utf8(Libpq.PQerrorMessage(get(ptr)))
+        throw(PostgresError(msg))
     end
 end
 
@@ -274,15 +275,18 @@ function escape_value(conn::PostgresConnection, s::AbstractString)
     Libpq.PQfreemem(ptr)
     return s
 end
-function escape(s::AbstractString)
-    escape(_last_connection, s)
-end
 
-function escape(ex::Expr)
-    for (i, arg) in enumerate(ex.args)
-        if isa(arg, Symbol)
-            ex.args[i] = :(escape(string($(esc(arg)))))
-        end
-    end
-    return ex
-end
+#FIXME
+#function escape(s::AbstractString)
+#    println(s)
+#    escape(_last_connection, s)
+#end
+#
+#function escape(ex::Expr)
+#    for (i, arg) in enumerate(ex.args)
+#        if isa(arg, Symbol)
+#            ex.args[i] = :(escape(string($(esc(arg)))))
+#        end
+#    end
+#    return ex
+#end

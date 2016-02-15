@@ -44,6 +44,10 @@
             print(io, "($(t.name) <: $(t.basetype.name)) -> $(typeof(t.basetype.naval))")
     end
 
+    naval(t::PostgresType) = t.naval
+    naval(t::PostgresEnumType) = t.naval
+    naval(t::PostgresDomainType) = t.basetype.naval
+
     ###########################################################################
     ### base parsers
 
@@ -116,13 +120,17 @@
         BitVector([c=='1' for c in value])
     end
 
-    # Is it fraigile to use oids instead of names?
-    # Postgres lets you redifine types given a domain (namespace)
+    # Is it fragile to use oids instead of names?
+    # Postgres lets you redefine types given a domain (namespace)
     # Oids have to be unique against the _whole_ database.
-    # Unlikely that someone would redifine an int8, but would lead
+    # Unlikely that someone would redefine an int8, but would lead
     # to very hard to find errors.
 
     base_types = Dict(
+
+        #XXX Do not use NaN for naval because (NaN == NaN) == false.
+        #    this will fail the unit tests for round trips
+        #    (there is big rant on this from the developers.)
 
         # This is everything the manual documents.
         # There is more but they are obsolete
@@ -133,14 +141,16 @@
 
         # numbers
         16           =>  PostgresType{Bool}(:bool, false),
-        17           =>  PostgresType{Vector{UInt8}}(:bytea,Vector{UInt8}()),
+        # needs more work
+        #17           =>  PostgresType{Vector{UInt8}}(:bytea,Vector{UInt8}()),
         20           =>  PostgresType{Int64}(:int8, 0),
         21           =>  PostgresType{Int16}(:int2, 0),
         23           =>  PostgresType{Int32}(:int4, 0),
-        700          =>  PostgresType{Float32}(:float4, NaN),
-        701          =>  PostgresType{Float64}(:float8, NaN),
-        790          =>  PostgresType{Float64}(:money, NaN),
-        1700         =>  PostgresType{BigFloat}(:numeric, NaN),
+        700          =>  PostgresType{Float32}(:float4, 0),
+        701          =>  PostgresType{Float64}(:float8, 0),
+        1700         =>  PostgresType{BigFloat}(:numeric, 0),
+
+        #790          =>  PostgresType{Float64}(:money, 0),
 
         # oid (internal) types
         # You never hear of these unless your a Postgres geek.
@@ -158,25 +168,30 @@
         #3220 │ pg_lsn ;  LSN (Log Sequence Number)
 
         # time
-        1114         =>  PostgresType{DateTime}(:timestamp, DateTime()),
+        # julia only uses 5 decimals of precision for the seconds :(
+        #1114         =>  PostgresType{DateTime}(:timestamp, DateTime()),
         1082         =>  PostgresType{Date}(:date, Date()),
         #1083 │ time        
         #1184 │ timestamptz 
         #1266 │ timetz      
         #1186 │ interval
 
-        # strings
-        18           =>  PostgresType{UTF8String}(:char, UTF8String("∅")),
-        25           =>  PostgresType{UTF8String}(:text, UTF8String("∅")),
-        1043         =>  PostgresType{UTF8String}(:varchar, UTF8String("∅")),
-        705          =>  PostgresType{UTF8String}(:unknown, UTF8String("∅")),
 
-        # chars
-        1042         =>  PostgresType{Char}(:bpchar, Char('\0')),
+        # probably deprecated. Cast it and it always comes out bpchar.
+        #18           =>  PostgresType{UTF8String}(:char, UTF8String("∅")),
+
+        # strings
+        25           =>  PostgresType{UTF8String}(:text, UTF8String("∅")),
+        # varchar and bpchar (blank padded char) are realy subsets of text.
+        # PG does not really have a character type like julia.
+        1043         =>  PostgresType{UTF8String}(:varchar, UTF8String("∅")),
+        1042         =>  PostgresType{UTF8String}(:bpchar, UTF8String("∅")),
+        705          =>  PostgresType{UTF8String}(:unknown, UTF8String("∅")),
         
         #bits
-        1560         =>   PostgresType{BitVector}(:bit, BitVector([false])),
-        1562         =>   PostgresType{BitVector}(:varbit, BitVector([false])),
+        # these will need a wrapper class for a canical rep. for PG.
+        #1560         =>   PostgresType{BitVector}(:bit, BitVector([false])),
+        #1562         =>   PostgresType{BitVector}(:varbit, BitVector([false])),
 
         #geom
         #600 │ point   

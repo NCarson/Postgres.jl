@@ -102,7 +102,7 @@ end
 
 function Base.show(io::IO, r::PostgresResult)
     t = join(["$(typeof(t.naval)), " for t in r.types])[1:end-2]
-    print(io, "$(r.ncols)x$(r.nrows){$t} PostgresResult")
+    print(io, "$(r.nrows)x$(r.ncols){$t} PostgresResult")
 end
 
 #Base.empty!
@@ -177,12 +177,12 @@ Base.getindex(result::PostgresResult, ::Colon, col::Int) =
 Base.getindex(result::PostgresResult, row_::Int, ::Colon) =
     row(result, row_)
 
-Base.length(r::PostgresResult) = r.nrows*r.ncols
+Base.length(r::PostgresResult) = r.nrows
 Base.size(r::PostgresResult) = (r.nrows,r.ncols)
 Base.isempty(r::PostgresResult) = (r.nrows==0 && r.ncols==0)
 
 Base.start(r::PostgresResult) = 1
 Base.endof(r::PostgresResult) = r.nrows
-Base.done(r::PostgresResult, i::Int) = i > r.nrows
+Base.done(r::PostgresResult, i::Int) = i >= r.nrows
 Base.next(r::PostgresResult, i::Int) = (row(r, i), i+1)
 #eltype
