@@ -4,7 +4,8 @@
 #####  result info
 
 type PostgresResultInfo <: DatabaseResultInfo
-    msg::AbstractString
+    msg::UTF8String
+    severity::UTF8String
     state::Symbol
     code::UTF8String
     primary::UTF8String
@@ -19,18 +20,20 @@ function PostgresResultInfo(ptr::Ptr{PGresult})
         getstate = sym -> s(Libpq.PQresultErrorField(ptr, Libpq.error_field[sym]))
 
         msg = utf8(Libpq.PQresultErrorMessage(ptr))
+        severity =  getstate(:severity)
         code =      getstate(:sqlstate)
         state =     Libpq.error_state[code[1:2]] 
         primary =   getstate(:message_primary)
         detail =    getstate(:message_detail)
         hint =      getstate(:message_hint)
         pos =       getstate(:statement_position)
-        PostgresResultInfo(msg, state, code, primary, detail, hint, pos)
+        PostgresResultInfo(msg, severity, state, code, primary, detail, hint, pos)
 end
 
 function Base.show(io::IO, info::PostgresResultInfo)
     println("""PostgresResultInfo(
         \tmsg:$(strip(info.msg))
+        \tseverity:$(info.severity)
         \tstate:$(info.state)
         \tcode:$(info.code)
         \tprimary:$(info.primary)
@@ -43,8 +46,11 @@ end
 function notice_callback(id::Ptr{Void},  ptr::Ptr{PGresult})
     i = PostgresResultInfo(ptr)
     println(i)
-    i.state == :warning ? warn(i.msg) : nothing
-    i.state == :successful_completion ? info(i.msg) : nothing
+    if i.state in (:warning, :invalid_transaction_state)
+        warn(i.msg)
+    elseif i.state == :successful_completion 
+        info(i.msg)
+    end
     C_NULL
 end
 
@@ -78,6 +84,7 @@ function PostgresResult(p::Ptr{PGresult}, types::Dict)
 
     s = Libpq.PQresultStatus(p)
     code = get(Libpq.exec_status, s, nothing)
+    r = nothing
 
     if code == nothing
         throw(PostgresError("unknown status $s, $msg"))
@@ -85,16 +92,25 @@ function PostgresResult(p::Ptr{PGresult}, types::Dict)
     elseif code == :fatal_error
         throw(PostgresServerError(PostgresResultInfo(p)))
         Libpq.PQclear(p)
-    else
-        #code == :nonfatal_error ? nonfatal_error(p) : nothing
+
+    elseif code in (:tuples_ok, :empty_query, :command_ok)
         #code == :command_ok ? nonfatal_error(p) : nothing
         oids = [Int(Libpq.PQftype(p, col)) for col in 0:(Libpq.PQnfields(p)-1)]
         types = [get(types, oid, types[0]) for oid in oids]
         colnames = [utf8(Libpq.PQfname(p, col)) for col in 0:(Libpq.PQnfields(p)-1)]
         nrows = Libpq.PQntuples(p) 
         ncols = Libpq.PQnfields(p)
-        PostgresResult(types, colnames, nrows, ncols, Nullable(p))
+        r = PostgresResult(types, colnames, nrows, ncols, Nullable(p))
+    else
+        throw(PostgresError("unhandled server code: $code"))
     end
+
+    if code == :command_ok
+        cmd = utf8(Libpq.PQcmdStatus(p))
+        num = utf8(Libpq.PQcmdTuples(p))
+        info("$cmd $num")
+    end
+    r
 end
 
 function Base.show(io::IO, r::PostgresResult)

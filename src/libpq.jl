@@ -125,11 +125,12 @@ const error_state = Dict(
 
 #@c Void PQreset (Ptr{PGconn},) libpq
 #@c Ptr{PGcancel} PQgetCancel (Ptr{PGconn},) libpq
-#@c Cint PQprotocolVersion (Ptr{PGconn},) libpq
-#@c Cint PQserverVersion (Ptr{PGconn},) libpq
 #@c PGTransactionStatusType PQtransactionStatus (Ptr{PGconn},) libpq
-#@c Cint PQclientEncoding (Ptr{PGconn},) libpq
 #@c Cint PQsetClientEncoding (Ptr{PGconn}, Ptr{UInt8}) libpq
+@c Cint PQclientEncoding (Ptr{PGconn},) libpq
+@c Cint PQprotocolVersion (Ptr{PGconn},) libpq
+@c Cint PQserverVersion (Ptr{PGconn},) libpq
+@c Cint PQlibVersion (Ptr{Void},) libpq
 
 @c Ptr{PGresult} PQexec (Ptr{PGconn}, Ptr{UInt8}) libpq
 #@c Cint PQputCopyData (Ptr{PGconn}, Ptr{UInt8}, Cint) libpq
@@ -146,8 +147,8 @@ const error_state = Dict(
 @c Cint         PQftablecol (Ptr{PGresult}, Cint) libpq
 @c Oid          PQftype (Ptr{PGresult}, Cint) libpq
 #for update insert etc...
-#@c Ptr{UInt8} PQcmdStatus (Ptr{PGresult},) libpq
-#@c Ptr{UInt8} PQcmdTuples (Ptr{PGresult},) libpq
+@c Ptr{UInt8} PQcmdStatus (Ptr{PGresult},) libpq
+@c Ptr{UInt8} PQcmdTuples (Ptr{PGresult},) libpq
 
 @c Ptr{UInt8} PQgetvalue (Ptr{PGresult}, Cint, Cint) libpq
 @c Cint PQgetisnull (Ptr{PGresult}, Cint, Cint) libpq

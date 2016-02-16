@@ -65,11 +65,13 @@ function require_connection(conn::PostgresConnection)
 end
 
 function close(conn::PostgresConnection)
-    require_connection(conn.ptr)
-    Libpq.PQfinish(get(conn.ptr))
+    if !isnull(conn.ptr)
+        require_connection(conn.ptr)
+        Libpq.PQfinish(get(conn.ptr))
+    end
     conn.ptr = ConnPtr()
     _last_connection = nothing
-    nothing
+    conn
 end
 
 function finalize_connect(ptr::ConnPtr)
@@ -113,6 +115,29 @@ function Base.connect(::Type{PostgresServer}, dsn::AbstractString)
 end
 
 isopen(conn::PostgresConnection) = status(conn.ptr) == :ok
+
+function Base.versioninfo(conn::PostgresConnection)
+    function getv(v)
+        v = string(v)
+        a = [(i % 2 == 0 ? '.' : c) for (i, c) in enumerate(v)]
+        VersionNumber(join(a))
+    end
+
+    d = Dict()
+    ptr = require_connection(conn)
+    d[:server] = getv(Libpq.PQserverVersion(ptr))
+    d[:libpq] = getv(Libpq.PQlibVersion(C_NULL))
+    d[:protocol] = getv(Libpq.PQprotocolVersion(ptr))
+    d
+end
+
+#function encoding(conn::PostgresConnection)
+#    p = require_connection(conn)
+#    # returns int
+#    # have no idea where to translate into iso code
+#    # probably in server header somewhere
+#    Libpq.PQclientEncoding(p)
+#end
 
 ################################################################################
 #####  pg type bootstrap
@@ -234,6 +259,10 @@ function execute(curs::PostgresCursor, sql::AbstractString)
     curs.execute_time = time() - s
     get(curs.result)
 end
+
+begin_(curs::PostgresCursor) = query(curs, "begin;")
+commit(curs::PostgresCursor) = query(curs, "commit;")
+rollback(curs::PostgresCursor) = query(curs, "rollback;")
 
 ################################################################################
 #####  Fetch
