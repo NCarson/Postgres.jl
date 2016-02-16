@@ -72,15 +72,12 @@ type PostgresResult
     nrows::Integer
     ncols::Integer
     ptr::Nullable{Ptr}
-
 end
 
 function PostgresResult(p::Ptr{PGresult}, types::Dict)
 
     s = Libpq.PQresultStatus(p)
     code = get(Libpq.exec_status, s, nothing)
-
-    println(code)
 
     if code == nothing
         throw(PostgresError("unknown status $s, $msg"))
@@ -105,8 +102,7 @@ function Base.show(io::IO, r::PostgresResult)
     print(io, "$(r.nrows)x$(r.ncols){$t} PostgresResult")
 end
 
-#Base.empty!
-function free_result!(r::PostgresResult)
+function close(r::PostgresResult)
     if !isnull(r.ptr)
         Libpq.PQclear(get(r.ptr))
     end
@@ -120,15 +116,6 @@ function unsafe_column{T}(
     t::AbstractPostgresType{T}
     )
 
-    p = (t,v) -> unsafe_parse(t, v) 
-    try
-        # if we have a fast ccall parser
-        unsafe_parse(t, pointer("$(t.naval)"))
-    catch MethodError
-        #else we have to alloc a string for julia
-        p = (t,v) -> unsafe_parse(t, utf8(v))
-    end
-
     mask = Vector{Bool}(nrows)
     vals = Vector{T}(nrows)
     for row in 1:nrows
@@ -138,7 +125,7 @@ function unsafe_column{T}(
             @inbounds vals[row] = t.naval
         else
             v = Libpq.PQgetvalue(ptr, row-1, col-1)
-            @inbounds vals[row] = p(t, v)
+            @inbounds vals[row] = unsafe_parse(t, v)
         end
     end
     if isa(t, PostgresEnumType)
@@ -148,11 +135,20 @@ function unsafe_column{T}(
     end
 end
 
-column(result::PostgresResult, col::Int) =
+function column(result::PostgresResult, col::Int)
+    if !(1 <= col <= result.ncols)
+        throw(BoundsError(result, (row, col)))
+    end
     unsafe_column(get(result.ptr), col, result.nrows, result.types[col])
+end
 
 function row(result::PostgresResult, row::Int)
-    tuple([result[row,col] for col in (1:result.ncols)] ...)
+    #tuple([result[row,col] for col in (1:result.ncols)] ...)
+    v = Vector{Any}(result.ncols)
+    for col in 1:result.ncols
+        v[col] = result[row, col]
+    end
+    v
 end
 
 function Base.getindex(result::PostgresResult, row::Int, col::Int)
@@ -164,10 +160,10 @@ function Base.getindex(result::PostgresResult, row::Int, col::Int)
     row -= 1
     ptr = get(result.ptr)
     if Libpq.PQgetisnull(ptr, row, col)==1
-        return Nullable(typeof(t.naval))
+        return Nullable{typeof(naval(t))}()
     else
-        v = utf8(Libpq.PQgetvalue(ptr, row, col))
-        return Nullable(unsafe_parse(t, v))
+        p = Libpq.PQgetvalue(ptr, row, col)
+        return Nullable{typeof(naval(t))}(unsafe_parse(t, p))
     end
 end
 

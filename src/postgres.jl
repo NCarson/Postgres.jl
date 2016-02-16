@@ -199,20 +199,23 @@ function cursor(conn::PostgresConnection)
     )
 end
 
-function free_result!(curs::PostgresCursor)
+function close(curs::PostgresCursor)
 
     if  (   !isnull(curs.result)
             && Libpq.PQstatus(get(curs.conn.ptr)) == :ok
         )
-        free_result!(get(curs.result))
+        close(get(curs.result))
     end
     curs.result = Nullable{PostgresResult}()
-    nothing
 end
 
 
 ################################################################################
 #####  Execute
+
+# begin; DECLARE liahona CURSOR FOR SELECT 1 from generate_series(1,100);
+# fetch forward 10000 from liahona;
+# commit
 
 function execute(curs::PostgresCursor, sql::AbstractString)
 
@@ -222,17 +225,15 @@ function execute(curs::PostgresCursor, sql::AbstractString)
 
     require_connection(curs.conn.ptr)
     if !isnull(curs.result)
-        free_result!(curs)
+        close(curs)
     end
     s = time()
     ptr = Libpq.PQexec(get(curs.conn.ptr), sql)
     curs.result = PostgresResult(ptr, curs.conn.pgtypes)
-    finalizer(curs, free_result!)
+    finalizer(curs, close)
     curs.execute_time = time() - s
     get(curs.result)
 end
-
-
 
 ################################################################################
 #####  Fetch
@@ -252,7 +253,7 @@ function fetch(curs::PostgresCursor)
     names = Symbol[symbol(name=="?column?" ? "x$i" : name) 
         for (i, name) in enumerate(r.colnames)]
     df = DataFrame(columns, names)
-    free_result!(curs)
+    close(curs)
     curs.fetch_time = time() - s
     return df
 end

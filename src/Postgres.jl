@@ -26,7 +26,8 @@ module Postgres
                 PostgresType,
                 PostgresDomainType,
                 PostgresEnumType,
-                unsafe_parse
+                unsafe_parse,
+                naval
     end
 
     module Results
