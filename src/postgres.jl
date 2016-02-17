@@ -131,14 +131,6 @@ function Base.versioninfo(conn::PostgresConnection)
     d
 end
 
-#function encoding(conn::PostgresConnection)
-#    p = require_connection(conn)
-#    # returns int
-#    # have no idea where to translate into iso code
-#    # probably in server header somewhere
-#    Libpq.PQclientEncoding(p)
-#end
-
 ################################################################################
 #####  pg type bootstrap
 
@@ -191,41 +183,78 @@ end
 ################################################################################
 #####  Cursor
 
-type PostgresCursor{B<:Buffering} <: DatabaseCursor
-    conn::PostgresConnection
-    result::Nullable{PostgresResult}
-    page_size::Int
-    named_cursor::UTF8String
+type QueryTime
     execute_time::Float64
     fetch_time::Float64
     query::AbstractString
 end
 
-function Base.show(io::IO, curs::PostgresCursor) 
-    if (curs.fetch_time != 0)
-        exc = round(curs.execute_time, 3)
-        fetch = round(curs.fetch_time, 3)
-        s = "\n\tserver time: $exc\tjulia time:$fetch"
-    else
-        s = ""
+function QueryTime(t::Float64, query::AbstractString)
+    QueryTime(t, 0, query)
+end
+
+function Base.show(io::IO, qt::QueryTime) 
+    exc = round(qt.execute_time, 3)
+    fetch = round(qt.fetch_time, 3)
+    print(io, "server time: $exc\tfetch time:$fetch")
+end
+
+abstract PostgresCursor <: DatabaseCursor
+
+type BufferedPostgresCursor <: PostgresCursor
+    conn::PostgresConnection
+    result::Nullable{PostgresResult}
+    query_time::Nullable{QueryTime}
+    finished::Bool
+end
+
+type StreamedPostgresCursor <: PostgresCursor
+    conn::PostgresConnection
+    result::Nullable{PostgresResult}
+    query_time::Nullable{QueryTime}
+    name::AbstractString
+    page_size::Int
+    finished::Bool
+
+    function StreamedPostgresCursor(conn, result, query_time, name, page_size) 
+        if page_size < 0
+            throw(DomainError())
+        else
+            new(conn, result, query_time, name, page_size, true)
+        end
     end
-    print(io, "$(typeof(curs))(\n\t$(curs.conn),\n\t$(curs.result)$s)")
 end
 
-function cursor(conn::PostgresConnection)
-    return PostgresCursor{Val{:buffered}}(
-        conn, 
-        Nullable{PostgresResult}(),
-        0,
-        "",
-        0,
-        0,
-        ""
-    )
+function Base.show(io::IO, curs::PostgresCursor) 
+    s = !isnull(curs.query_time) ? "\n\t$(get(curs.query_time))" : "" 
+    p = :page_size in fieldnames(curs) ? "\n\tpage_size: $(curs.page_size)" : "" 
+
+    print(io, "$(typeof(curs))("
+        * "\n\t$(curs.conn),"
+        * "\n\t$(curs.result)$p$s)")
 end
 
+function cursor(conn::PostgresConnection, page_size=0)
+    if page_size > 0
+        return StreamedPostgresCursor(
+            conn, 
+            Nullable{PostgresResult}(),
+            Nullable{QueryTime}(),
+            "__julia_cursor__",
+            page_size,
+        )
+    else
+        return BufferedPostgresCursor(
+            conn, 
+            Nullable{PostgresResult}(),
+            Nullable{QueryTime}(),
+            true
+        )
+    end
+end
+
+#XXX this would be better to put closer to result or rename
 function close(curs::PostgresCursor)
-
     if  (   !isnull(curs.result)
             && Libpq.PQstatus(get(curs.conn.ptr)) == :ok
         )
@@ -234,44 +263,77 @@ function close(curs::PostgresCursor)
     curs.result = Nullable{PostgresResult}()
 end
 
+Base.start(::PostgresCursor) = nothing
+Base.next(curs::PostgresCursor, x) = fetch(curs), nothing
+Base.done(curs::PostgresCursor, x) = curs.finished
 
 ################################################################################
 #####  Execute
 
-# begin; DECLARE liahona CURSOR FOR SELECT 1 from generate_series(1,100);
-# fetch forward 10000 from liahona;
-# commit
+begin_(curs::PostgresCursor) = Libpq.PQexec(get(curs.conn.ptr), "begin;")
+commit(curs::PostgresCursor) = Libpq.PQexec(get(curs.conn.ptr), "commit;")
+rollback(curs::PostgresCursor) = Libpq.PQexec(get(curs.conn.ptr), "rollback;")
+
+function _execute(curs::BufferedPostgresCursor, sql::AbstractString)
+    Libpq.PQexec(get(curs.conn.ptr), sql)
+end
+
+function _execute(curs::StreamedPostgresCursor, sql::AbstractString)
+    #maybe should be an error?
+    if !curs.finished
+        commit(curs)
+    end
+    sql = "begin; declare $(curs.name) cursor for $sql"
+    ptr = Libpq.PQexec(get(curs.conn.ptr), sql)
+    ptr
+end
 
 function execute(curs::PostgresCursor, sql::AbstractString)
-
-    curs.execute_time = 0
-    curs.fetch_time = 0
-    curs.query = sql
-
+    
     require_connection(curs.conn.ptr)
-    if !isnull(curs.result)
+    if !isnull(curs.result) || !curs.finished
         close(curs)
     end
     s = time()
-    ptr = Libpq.PQexec(get(curs.conn.ptr), sql)
+    ptr = _execute(curs, sql)
+    curs.finished = false
     curs.result = PostgresResult(ptr, curs.conn.pgtypes)
+    curs.query_time = Nullable{QueryTime}(QueryTime(time() - s, sql))
     finalizer(curs, close)
-    curs.execute_time = time() - s
     get(curs.result)
 end
 
-begin_(curs::PostgresCursor) = query(curs, "begin;")
-commit(curs::PostgresCursor) = query(curs, "commit;")
-rollback(curs::PostgresCursor) = query(curs, "rollback;")
 
 ################################################################################
 #####  Fetch
 
-function fetch(curs::PostgresCursor)
-
+function _fetch!(curs::BufferedPostgresCursor)
     if isnull(curs.result)
         throw(PostgresError("No results to fetch"))
     end
+    curs.finished = true
+end
+
+function _fetch!(curs::StreamedPostgresCursor)
+
+    if curs.finished
+        throw(PostgresError("No results to fetch"))
+    end
+
+    sql = "fetch forward $(curs.page_size) from $(curs.name)"
+    ptr = Libpq.PQexec(get(curs.conn.ptr), sql)
+    curs.result = PostgresResult(ptr, curs.conn.pgtypes)
+    if (get(curs.result).nrows <= 0)
+        commit(curs)
+        curs.finished = true
+        #close(curs)
+    end
+    nothing
+end
+
+function Base.fetch(curs::PostgresCursor)
+
+    _fetch!(curs)
 
     s = time()
     r = get(curs.result)
@@ -283,7 +345,7 @@ function fetch(curs::PostgresCursor)
         for (i, name) in enumerate(r.colnames)]
     df = DataFrame(columns, names)
     close(curs)
-    curs.fetch_time = time() - s
+    get(curs.query_time).fetch_time = time() - s
     return df
 end
 

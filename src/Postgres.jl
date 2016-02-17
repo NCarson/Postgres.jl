@@ -11,7 +11,10 @@ module Postgres
     typealias Buffering Union{Val{:buffered}, Val{:streamed}}
     abstract DatabaseInterface
     abstract DatabaseConnection
-    abstract DatabaseCursor{B<:Buffering}
+
+    abstract DatabaseCursor
+    abstract BufferedDatabaseCursor <: DatabaseCursor
+    abstract StreamedDatabaseCursor <: DatabaseCursor
 
     module Libpq
         include("libpq.jl")

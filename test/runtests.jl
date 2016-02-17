@@ -160,3 +160,25 @@ for i in 1:length(res.types)
 end
 @test !isnull(res[1, 1])
 @test isnull(res[1, 2])
+
+
+#iteration
+curs = P.cursor(conn)
+streamed = P.cursor(conn, 10)
+function count_iters(curs)
+    last = nothing
+    for (i, r) in enumerate(curs)
+        last = i
+    end
+    last
+end
+
+P.execute(streamed, "select 1 from generate_series(1, 23)")
+@test count_iters(streamed) == 4
+@test count_iters(streamed) == nothing
+
+P.execute(curs, "select 1 from generate_series(1, 23)")
+@test count_iters(curs) == 1
+@test count_iters(curs) == nothing
+
+

@@ -126,8 +126,6 @@ const error_state = Dict(
 #@c Void PQreset (Ptr{PGconn},) libpq
 #@c Ptr{PGcancel} PQgetCancel (Ptr{PGconn},) libpq
 #@c PGTransactionStatusType PQtransactionStatus (Ptr{PGconn},) libpq
-#@c Cint PQsetClientEncoding (Ptr{PGconn}, Ptr{UInt8}) libpq
-@c Cint PQclientEncoding (Ptr{PGconn},) libpq
 @c Cint PQprotocolVersion (Ptr{PGconn},) libpq
 @c Cint PQserverVersion (Ptr{PGconn},) libpq
 @c Cint PQlibVersion (Ptr{Void},) libpq
