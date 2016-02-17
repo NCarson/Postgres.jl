@@ -112,6 +112,7 @@ const error_state = Dict(
     "XX" => :internal_error,
 )
 
+#### CONNECTIONS
 @c Ptr{PGconn}      PQsetdbLogin (Ptr{UInt8}, Ptr{UInt8}, Ptr{UInt8}, Ptr{UInt8},
                               Ptr{UInt8}, Ptr{UInt8}, Ptr{UInt8}) libpq
 @c Ptr{PGconn}      PQconnectdb (Ptr{UInt8},) libpq
@@ -123,19 +124,18 @@ const error_state = Dict(
 @c Ptr{UInt8}       PQresultErrorField (Ptr{PGresult}, Cint) libpq
 @c Void             PQsetNoticeReceiver (Ptr{PGconn}, Ptr{Void}, Ptr{Void}) libpq
 
-#@c Void PQreset (Ptr{PGconn},) libpq
-#@c Ptr{PGcancel} PQgetCancel (Ptr{PGconn},) libpq
-#@c PGTransactionStatusType PQtransactionStatus (Ptr{PGconn},) libpq
-@c Cint PQprotocolVersion (Ptr{PGconn},) libpq
-@c Cint PQserverVersion (Ptr{PGconn},) libpq
-@c Cint PQlibVersion (Ptr{Void},) libpq
+#### EXEC COMMANDS
+@c Ptr{PGresult}    PQexec (Ptr{PGconn}, Ptr{UInt8}) libpq
+@c Ptr{PGresult}    PQgetResult (Ptr{PGconn},) libpq # for the end of a copy command
+@c Cint             PQputCopyData (Ptr{PGconn}, Ptr{UInt8}, Cint) libpq
+@c Cint             PQputCopyEnd (Ptr{PGconn}, Ptr{UInt8}) libpq
+#@c Cint            PQgetCopyData (Ptr{PGconn}, Ptr{Ptr{UInt8}}, Cint) libpq
 
-@c Ptr{PGresult} PQexec (Ptr{PGconn}, Ptr{UInt8}) libpq
-#@c Cint PQputCopyData (Ptr{PGconn}, Ptr{UInt8}, Cint) libpq
-#@c Cint PQputCopyEnd (Ptr{PGconn}, Ptr{UInt8}) libpq
-#@c Cint PQgetCopyData (Ptr{PGconn}, Ptr{Ptr{UInt8}}, Cint) libpq
-#@c Cint PQendcopy (Ptr{PGconn},) libpq
-
+#### Results
+@c Ptr{UInt8}   PQgetvalue (Ptr{PGresult}, Cint, Cint) libpq
+@c Cint         PQgetisnull (Ptr{PGresult}, Cint, Cint) libpq
+@c Void         PQclear (Ptr{PGresult},) libpq
+# result fields
 @c Cint         PQntuples (Ptr{PGresult},) libpq
 @c Cint         PQnfields (Ptr{PGresult},) libpq
 @c Cint         PQbinaryTuples (Ptr{PGresult},) libpq
@@ -145,18 +145,21 @@ const error_state = Dict(
 @c Cint         PQftablecol (Ptr{PGresult}, Cint) libpq
 @c Oid          PQftype (Ptr{PGresult}, Cint) libpq
 #for update insert etc...
-@c Ptr{UInt8} PQcmdStatus (Ptr{PGresult},) libpq
-@c Ptr{UInt8} PQcmdTuples (Ptr{PGresult},) libpq
+@c Ptr{UInt8}   PQcmdStatus (Ptr{PGresult},) libpq
+@c Ptr{UInt8}   PQcmdTuples (Ptr{PGresult},) libpq
 
-@c Ptr{UInt8} PQgetvalue (Ptr{PGresult}, Cint, Cint) libpq
-@c Cint PQgetisnull (Ptr{PGresult}, Cint, Cint) libpq
-@c Void PQclear (Ptr{PGresult},) libpq
-
-#for escaped values
-@c Void PQfreemem (Ptr{Void},) libpq
-@c Ptr{UInt8} PQescapeLiteral (Ptr{PGconn}, Ptr{UInt8}, Cint) libpq
+#### Escaping
+@c Void         PQfreemem (Ptr{Void},) libpq
+@c Ptr{UInt8}   PQescapeLiteral (Ptr{PGconn}, Ptr{UInt8}, Cint) libpq
 #@c Ptr{UInt8} PQescapeIdentifier (Ptr{PGconn}, Ptr{UInt8}, Cint) libpq
 
+#### Misc
+@c Cint PQprotocolVersion (Ptr{PGconn},) libpq
+@c Cint PQserverVersion (Ptr{PGconn},) libpq
+@c Cint PQlibVersion (Ptr{Void},) libpq
+#@c Void PQreset (Ptr{PGconn},) libpq
+#@c Ptr{PGcancel} PQgetCancel (Ptr{PGconn},) libpq
+#@c PGTransactionStatusType PQtransactionStatus (Ptr{PGconn},) libpq
 #@c Ptr{Cuchar} PQescapeByteaConn (Ptr{PGconn}, Ptr{Cuchar}, Cint, Ptr{Cint}) libpq
 #@c Ptr{Cuchar} PQunescapeBytea (Ptr{Cuchar}, Ptr{Cint}) libpq
 #@c Ptr{Cuchar} PQescapeBytea (Ptr{Cuchar}, Cint, Ptr{Cint}) libpq

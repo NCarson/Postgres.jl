@@ -270,9 +270,16 @@ Base.done(curs::PostgresCursor, x) = curs.finished
 ################################################################################
 #####  Execute
 
-begin_(curs::PostgresCursor) = Libpq.PQexec(get(curs.conn.ptr), "begin;")
-commit(curs::PostgresCursor) = Libpq.PQexec(get(curs.conn.ptr), "commit;")
-rollback(curs::PostgresCursor) = Libpq.PQexec(get(curs.conn.ptr), "rollback;")
+function _transaction!(curs::PostgresCursor, cmd::AbstractString) 
+    ptr = require_connection(curs.conn)
+    res = Libpq.PQexec(ptr, cmd)
+    Libpq.PQclear(res)
+    nothing
+end
+
+begin_!(curs::PostgresCursor) = _transaction!(curs, "begin")
+commit!(curs::PostgresCursor) = _transaction!(curs, "commit")
+rollback!(curs::PostgresCursor) = _transaction!(curs, "rollback")
 
 function _execute(curs::BufferedPostgresCursor, sql::AbstractString)
     Libpq.PQexec(get(curs.conn.ptr), sql)
@@ -382,3 +389,63 @@ end
 #    end
 #    return ex
 #end
+
+################################################################################
+#####  Copy
+
+function writecopy(io::IO, da::DataArray)
+    out = Matrix{UTF8String}(size(da)[1], size(da)[2])
+    for y in 1:size(da)[1]
+        for x in 1:size(da)[2]
+            local v = da[y, x]
+            if isa(v, AbstractString)
+                v = replace(v, "\\", "\\\\")
+            end
+            if isna(v)
+                v = "\\N"
+            end
+            out[y, x] = string(v)
+        end
+    end
+    for y in 1:size(out)[1]
+        writedlm(io, out[y, :])
+    end
+    seekstart(io)
+    io
+end
+
+writecopy(io::IO, df::DataFrame) = writecopy(io, DataArray(df))
+
+function error_message(conn::PostgresConnection)
+    ptr = require_connection(conn)
+    #FIXME free
+    return utf8(PQerrorMessage(ptr))
+end
+
+# its copy from in PG but relatively were copying to
+function copyto(curs::PostgresCursor, s::AbstractString, table::AbstractString)
+    p = require_connection(curs.conn)
+    res = Libpq.PQexec(p, "copy $table from stdin")
+    code = check_status(res)
+    if (code != :copy_in)
+        close(res)
+        throw(PostgresError("unhandled state $code"))
+    end
+    status = Libpq.PQputCopyData(p, s, length(s))
+    status != 1 ? error(error_message(conn)) : nothing
+    status = Libpq.PQputCopyEnd(p, C_NULL)
+    status != 1 ? error(error_message(conn)) : nothing
+    # The manual says there may be more than one query result
+    # on the pipeline and we should keep getting results
+    # until it returns a null pointer.
+    # But, in single user copy mode once seems to be ok.
+    ptr = Libpq.PQgetResult(p)
+    result = PostgresResult(ptr, curs.conn.pgtypes)
+    result
+end
+
+function copyto(curs::PostgresCursor, df::DataFrame, table::AbstractString)
+    buffer = readall(writecopy(IOBuffer(), df))
+    copyto(curs, buffer, table)
+end
+

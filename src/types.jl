@@ -138,9 +138,13 @@ base_types = Dict(
 
     # default if we cannot find it in the Dict
     0            =>  PostgresType{UTF8String}(:jlunknown, UTF8String("∅")),
+
     16           =>  PostgresType{Bool}(:bool, false),
-    # needs more work
-    #17           =>  PostgresType{Vector{UInt8}}(:bytea,Vector{UInt8}()),
+    17           =>  PostgresType{Vector{UInt8}}(:bytea,Vector{UInt8}()),
+
+    #### BITS
+    1560         =>  PostgresType{BitVector}(:bit, BitVector([false])),
+    1562         =>  PostgresType{BitVector}(:varbit, BitVector([false])),
 
     #### NUMBERS
     20           =>  PostgresType{Int64}(:int8, 0),
@@ -149,7 +153,8 @@ base_types = Dict(
     700          =>  PostgresType{Float32}(:float4, 0),
     701          =>  PostgresType{Float64}(:float8, 0),
     1700         =>  PostgresType{BigFloat}(:numeric, 0),
-    # good luck. depends on locale.
+    # good luck :) depends on locale.
+    # Currency package looks pretty sweet for this.
     #790          =>  PostgresType{Float64}(:money, 0),
 
     #### STRINGS
@@ -182,10 +187,6 @@ base_types = Dict(
     #1266 │ timetz      
     #1186 │ interval
     
-    #### BITS
-    # these will need a wrapper class for a canical rep. for PG.
-    #1560         =>   PostgresType{BitVector}(:bit, BitVector([false])),
-    #1562         =>   PostgresType{BitVector}(:varbit, BitVector([false])),
 
     #### OID (INTERNAL) TYPES
     # You never hear of these unless your a Postgres geek.
@@ -232,4 +233,51 @@ base_types = Dict(
     # Pseudo-Types are abstract so you should
     # should never see their oid's from libpq fetches
 )
+
+base_types_byname = Dict([(t[2].name, t[2]) for t in base_types])
+
+type PostgresValue{T}
+    pgtype::AbstractPostgresType
+    value::UTF8String
+end
+function Base.show(io::IO, val::PostgresValue)
+    print(val.value)
+end
+
+PostgresValue{T <: AbstractString}(val::T) =
+    PostgresValue{T}(base_types_byname[:text], utf8(val))
+
+PostgresValue{T <: Int16}(val::T) =
+    PostgresValue{T}(base_types_byname[:int2], utf8(string(val)))
+
+PostgresValue{T <: Int32}(val::T) =
+    PostgresValue{T}(base_types_byname[:int4], utf8(string(val)))
+
+PostgresValue{T <: Int64}(val::T) =
+    PostgresValue{T}(base_types_byname[:int8], utf8(string(val)))
+
+PostgresValue{T <: Float32}(val::T) =
+    PostgresValue{T}(base_types_byname[:float4], utf8(string(val)))
+
+PostgresValue{T <: Float64}(val::T) =
+    PostgresValue{T}(base_types_byname[:float8], utf8(string(val)))
+
+PostgresValue{T <: BigFloat}(val::T) =
+    PostgresValue{T}(base_types_byname[:numeric], utf8(string(val)))
+
+PostgresValue{T <: Date}(val::T) =
+    PostgresValue{T}(base_types_byname[:date], utf8(string(val)))
+
+PostgresValue{T <: Bool}(val::T) =
+    PostgresValue{T}(base_types_byname[:bool], utf8(string(val)))
+ 
+function PostgresValue{T <: Vector{UInt8}}(val::T)
+    v = "\\x" * join(map(x -> repr(x)[3:end], val))
+    PostgresValue{T}(base_types_byname[:bytea], v)
+end
+
+function PostgresValue{T <: BitVector}(val::T)
+    v = join(map(x -> x ? "1" : "0", val))
+    PostgresValue{T}(base_types_byname[:varbit], v)
+end
 

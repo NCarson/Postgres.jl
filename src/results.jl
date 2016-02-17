@@ -45,7 +45,6 @@ end
 
 function notice_callback(id::Ptr{Void},  ptr::Ptr{PGresult})
     i = PostgresResultInfo(ptr)
-    println(i)
     if i.state in (:warning, :invalid_transaction_state)
         warn(i.msg)
     elseif i.state == :successful_completion 
@@ -80,20 +79,27 @@ type PostgresResult
     ptr::Nullable{Ptr}
 end
 
-function PostgresResult(p::Ptr{PGresult}, types::Dict)
+function check_status(p::Ptr{PGresult})
 
     s = Libpq.PQresultStatus(p)
     code = get(Libpq.exec_status, s, nothing)
-    r = nothing
 
     if code == nothing
-        throw(PostgresError("unknown status $s, $msg"))
+        error("unknown status $s, $msg")
 
     elseif code == :fatal_error
+        println(PostgresResultInfo(p))
         throw(PostgresServerError(PostgresResultInfo(p)))
         Libpq.PQclear(p)
+    end
+    code
+end
 
-    elseif code in (:tuples_ok, :empty_query, :command_ok)
+function PostgresResult(p::Ptr{PGresult}, types::Dict)
+
+    r = nothing
+    code = check_status(p)
+    if code in (:tuples_ok, :empty_query, :command_ok)
         #code == :command_ok ? nonfatal_error(p) : nothing
         oids = [Int(Libpq.PQftype(p, col)) for col in 0:(Libpq.PQnfields(p)-1)]
         types = [get(types, oid, types[0]) for oid in oids]
@@ -102,7 +108,7 @@ function PostgresResult(p::Ptr{PGresult}, types::Dict)
         ncols = Libpq.PQnfields(p)
         r = PostgresResult(types, colnames, nrows, ncols, Nullable(p))
     else
-        throw(PostgresError("unhandled server code: $code"))
+        error("unhandled server code: $code")
     end
 
     if code == :command_ok

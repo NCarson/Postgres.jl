@@ -43,7 +43,7 @@ module Postgres
         using ..Types
         include("results.jl")
 
-        export PostgresResult
+        export PostgresResult, check_status
     end
 
     using .Results
