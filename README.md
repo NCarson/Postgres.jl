@@ -2,7 +2,7 @@
 # Postgres
 ## Database Interface for PostgreSQL and Julia
 
-## Basic Usage
+### Basic Usage
 ```julia
 julia> using Postgres
 julia> conn = connect(PostgresServer, Dict(:db=>"julia_test", :host=>"localhost"))
@@ -22,71 +22,66 @@ julia> df = query(curs, "select 1 from generate_series(1,5) as s")
 | 5   | 1  |
 ```
 
-### Transactions
+### Iteration
+
+Memory management is automatic for the cursor interface.
+
+#### Buffered (Normal) Cursor
 ```julia
-julia> begin_!(curs)
-julia> rollback!(curs)
-julia> commit!(curs)
-WARNING:  there is no transaction in progress
-# transaction already ended by rollback
+julia> execute(curs, "select 1 from generate_series(1, 10)")
+julia> for res in curs; println(res); end;
+10x1 DataFrames.DataFrame
+| Row | x1 |
+|-----|----|
+| 1   | 1  |
+| 2   | 1  |
+| 3   | 1  |
+| 4   | 1  |
+| 5   | 1  |
+| 6   | 1  |
+| 7   | 1  |
+| 8   | 1  |
+| 9   | 1  |
+| 10  | 1  |
+julia> for res in curs; println(res); end;
+# nothing (memory already freed from server)
 ```
 
-## Base Types supported as Julia Types
+#### Streamed (Paged) Cursor
 ```julia
-julia> for v in values(Postgres.Types.base_types)
-            println(v)
-       end
-
-text -> UTF8String
-varchar -> UTF8String
-bpchar -> UTF8String
-unknown -> UTF8String
-bit -> BitArray{1}
-varbit -> BitArray{1}
-bytea -> Array{UInt8,1}
-bool -> Bool
-int2 -> Int16
-int4 -> Int32
-int8 -> Int64
-float4 -> Float32
-float8 -> Float64
-numeric -> BigFloat
-date -> Date
-json -> UTF8String
-jsonb -> UTF8String
+julia> streamed = cursor(conn, 3)
+julia> execute(streamed, "select 1 from generate_series(1, 10)")
+julia> for res in streamed; println(res); end;
+3x1 DataFrames.DataFrame
+| Row | x1 |
+|-----|----|
+| 1   | 1  |
+| 2   | 1  |
+| 3   | 1  |
+3x1 DataFrames.DataFrame
+| Row | x1 |
+|-----|----|
+| 1   | 1  |
+| 2   | 1  |
+| 3   | 1  |
+3x1 DataFrames.DataFrame
+| Row | x1 |
+|-----|----|
+| 1   | 1  |
+| 2   | 1  |
+| 3   | 1  |
+1x1 DataFrames.DataFrame
+| Row | x1 |
+|-----|----|
+| 1   | 1  |
+0x1 DataFrames.DataFrame
 ```
-Others supported as UTF8String.
+Each iteration allocs and frees memory.
 
-## Extended Types
-Automatically determined on connection start up.
+### Result Interface
 
-```julia
-julia> types = collect(values(conn.pgtypes))
-julia> enum_test = filter(x->x.name==:enum_test, types)[1]
-enum_test ∈ Set(UTF8String["happy","sad"])
-# pg def:
-# Schema │   Name    │ Internal name │ Size │ Elements │
-#────────┼───────────┼───────────────┼──────┼──────────┼
-# public │ enum_test │ enum_test     │ 4    │ happy   ↵│
-#        │           │               │      │ sad      │
+Cursor must be closed (or unreachable) to release server resources.
 
-julia> domain_test = filter(x->x.name==:domain_test, types)[1]
-(domain_test <: int4) -> Int32
-# pg def:
-# Schema │    Name     │  Type   │ Modifier │               Check                │
-#────────┼─────────────┼─────────┼──────────┼────────────────────────────────────┼
-# public │ domain_test │ integer │          │ CHECK (VALUE >= 0 AND VALUE <= 10) │
-```
-Enum types will use PooledDataArrays!
-
-## Escaping
-```julia
-julia> user_input="1;select 'powned'"
-julia> escape_value(conn, user_input)
-"'1;select ''powned'''"
-```
-
-## Result Interface
 ```julia
 julia> using Postgres.Results
 julia> result = execute(curs, "select 1, null::int, 'HI'::text, 1.2::float8  
@@ -117,13 +112,76 @@ Any[Nullable(1),Nullable{Int32}(),Nullable("HI"),Nullable(1.2)]
 close(curs) # free postgres resources
 ```
 
-## Error Info
+### Transactions
+```julia
+julia> begin_!(curs)
+julia> rollback!(curs)
+julia> commit!(curs)
+WARNING:  there is no transaction in progress
+# transaction already ended by rollback
+```
+
+### Base Types supported as Julia Types
+```julia
+julia> for v in values(Postgres.Types.base_types)
+            println(v)
+       end
+
+text -> UTF8String
+varchar -> UTF8String
+bpchar -> UTF8String
+unknown -> UTF8String
+bit -> BitArray{1}
+varbit -> BitArray{1}
+bytea -> Array{UInt8,1}
+bool -> Bool
+int2 -> Int16
+int4 -> Int32
+int8 -> Int64
+float4 -> Float32
+float8 -> Float64
+numeric -> BigFloat
+date -> Date
+json -> UTF8String
+jsonb -> UTF8String
+```
+Others supported as UTF8String.
+
+### Extended Types
+Automatically determined on connection start up.
+
+```julia
+julia> types = collect(values(conn.pgtypes))
+julia> enum_test = filter(x->x.name==:enum_test, types)[1]
+enum_test ∈ Set(UTF8String["happy","sad"])
+# pg def:
+# Schema │   Name    │ Internal name │ Size │ Elements │
+#────────┼───────────┼───────────────┼──────┼──────────┼
+# public │ enum_test │ enum_test     │ 4    │ happy   ↵│
+#        │           │               │      │ sad      │
+
+julia> domain_test = filter(x->x.name==:domain_test, types)[1]
+(domain_test <: int4) -> Int32
+# pg def:
+# Schema │    Name     │  Type   │ Modifier │               Check                │
+#────────┼─────────────┼─────────┼──────────┼────────────────────────────────────┼
+# public │ domain_test │ integer │          │ CHECK (VALUE >= 0 AND VALUE <= 10) │
+```
+Enum types will use PooledDataArrays!
+
+### Escaping
+```julia
+julia> user_input="1;select 'powned'"
+julia> escape_value(conn, user_input)
+"'1;select ''powned'''"
+```
+
+### Error Info
 ```julia
 julia> try query(curs, "select xxx")
         catch err PostgresServerError
            println(err.info)
        end
-
 PostgresResultInfo(
             msg:ERROR:  column "xxx" does not exist
 LINE 1: select xxx
@@ -139,62 +197,11 @@ LINE 1: select xxx
 ```
 see Appendix A. in the Postgres manual for error code/state lists.
 
-## Iteration
+
+
+### Copy Support
 ```julia
-# normal cursor
-julia> execute(curs, "select 1 from generate_series(1, 10)")
-julia> for res in curs; println(res); end;
-10x1 DataFrames.DataFrame
-| Row | x1 |
-|-----|----|
-| 1   | 1  |
-| 2   | 1  |
-| 3   | 1  |
-| 4   | 1  |
-| 5   | 1  |
-| 6   | 1  |
-| 7   | 1  |
-| 8   | 1  |
-| 9   | 1  |
-| 10  | 1  |
-julia> for res in curs; println(res); end;
-# nothing (memory already freed from server)
-# Memory management is automatic for the cursor interface.
-
-# streamed cursor
-julia> streamed = cursor(conn, 3)
-julia> execute(streamed, "select 1 from generate_series(1, 10)")
-julia> for res in streamed; println(res); end;
-3x1 DataFrames.DataFrame
-| Row | x1 |
-|-----|----|
-| 1   | 1  |
-| 2   | 1  |
-| 3   | 1  |
-3x1 DataFrames.DataFrame
-| Row | x1 |
-|-----|----|
-| 1   | 1  |
-| 2   | 1  |
-| 3   | 1  |
-3x1 DataFrames.DataFrame
-| Row | x1 |
-|-----|----|
-| 1   | 1  |
-| 2   | 1  |
-| 3   | 1  |
-1x1 DataFrames.DataFrame
-| Row | x1 |
-|-----|----|
-| 1   | 1  |
-0x1 DataFrames.DataFrame
-
-#Each iteration allocs and frees memory for the page size.
-```
-
-## Copy Support
-```julia
-# (commands use the same interface as selects)
+# Commands use the same interface as selects.
 # Messages are passed through to Julia as you are used to seeing them in psql.
 julia> println(query(curs, """
     drop table if exists s; 
@@ -217,7 +224,7 @@ INFO: COPY 10 10
 ```
 
 
-## Custom Types
+### Custom Types
 ```julia
 julia> using Postgres.Types
 
@@ -265,7 +272,7 @@ julia> p1.x == p2.x && p1.y == p2.y
 true
 ```
 
-## Control-C cancels the query _at_ _the_ _server_
+### Control-C cancels the query _at_ _the_ _server_
 ```julia
 julia> query(curs, "select 1 from generate_series(1, (10^9)::int)")
 # oops; this will take forever
