@@ -97,6 +97,15 @@ function check_status(p::Ptr{PGresult})
     code
 end
 
+function check_command(p::Ptr{PGresult})
+    code = check_status(p)
+    if code == :command_ok
+        cmd = utf8(Libpq.PQcmdStatus(p))
+        num = utf8(Libpq.PQcmdTuples(p))
+        info("$cmd $num")
+    end
+end
+
 function PostgresResult(p::Ptr{PGresult}, types::Dict)
 
     r = nothing
@@ -112,12 +121,7 @@ function PostgresResult(p::Ptr{PGresult}, types::Dict)
     else
         error("unhandled server code: $code")
     end
-
-    if code == :command_ok
-        cmd = utf8(Libpq.PQcmdStatus(p))
-        num = utf8(Libpq.PQcmdTuples(p))
-        info("$cmd $num")
-    end
+    check_command(p)
     r
 end
 

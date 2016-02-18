@@ -306,6 +306,7 @@ function _transaction!(curs::PostgresCursor, cmd::AbstractString)
     ptr = require_connection(curs.conn)
     res = Libpq.interuptable_exec(ptr, cmd)
     Results.check_status(res)
+    Results.check_command(res)
     Libpq.PQclear(res)
     nothing
 end

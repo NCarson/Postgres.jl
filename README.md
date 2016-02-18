@@ -115,13 +115,16 @@ close(curs) # free postgres resources
 ### Transactions
 ```julia
 julia> begin_!(curs)
+INFO: BEGIN 
 julia> rollback!(curs)
+INFO: ROLLBACK 
 julia> commit!(curs)
-WARNING:  there is no transaction in progress
+WARNING: WARNING:  there is no transaction in progress
+INFO: COMMIT 
 # transaction already ended by rollback
 ```
 
-### Base Types supported as Julia Types
+### Base Types supported as Julia Types:
 ```julia
 julia> for v in values(Postgres.Types.base_types)
             println(v)
@@ -171,7 +174,7 @@ Enum types will use PooledDataArrays!
 
 ### Escaping
 ```julia
-julia> user_input="1;select 'powned'"
+julia> user_input="1';select 'powned';"
 julia> escape_value(conn, user_input)
 "'1;select ''powned'''"
 ```
