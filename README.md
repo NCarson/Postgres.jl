@@ -1,5 +1,5 @@
 
-### Postgres
+# Postgres
 ## Database Interface for PostgreSQL and Julia
 
 ## Basic Usage
@@ -22,7 +22,7 @@ julia> df = query(curs, "select 1 from generate_series(1,5) as s")
 | 5   | 1  |
 ```
 
-## Transactions
+### Transactions
 ```julia
 julia> begin_!(curs)
 julia> rollback!(curs)
@@ -57,8 +57,7 @@ jsonb -> UTF8String
 ```
 Others supported as UTF8String.
 
-# Extended Types
-
+## Extended Types
 Automatically determined on connection start up.
 
 ```julia
@@ -80,7 +79,7 @@ julia> domain_test = filter(x->x.name==:domain_test, types)[1]
 ```
 Enum types will use PooledDataArrays!
 
-# Escaping
+## Escaping
 ```julia
 julia> user_input="1;select 'powned'"
 julia> escape_value(conn, user_input)
@@ -103,7 +102,7 @@ julia> result[1, :]    # row; also row(curs, 1)
  Nullable("HI")   
  Nullable(1.2) 
 
-# columns are a lost faster to create
+# columns are a lot faster to create
 julia> result[:, 1]    # columns; also column(curs, 1)
 5-element DataArrays.DataArray{Int32,1}:
  1
@@ -118,7 +117,7 @@ Any[Nullable(1),Nullable{Int32}(),Nullable("HI"),Nullable(1.2)]
 close(curs) # free postgres resources
 ```
 
-## full access to error info
+## Error Info
 ```julia
 julia> try query(curs, "select xxx")
         catch err PostgresServerError
@@ -138,7 +137,7 @@ LINE 1: select xxx
             pos:8
 )
 ```
-see appendix B in the Postgres manual for error code/state lists.
+see Appendix A. in the Postgres manual for error code/state lists.
 
 ## Iteration
 ```julia
@@ -193,10 +192,10 @@ julia> for res in streamed; println(res); end;
 #Each iteration allocs and frees memory for the page size.
 ```
 
-"""))
 ## Copy Support
 ```julia
 # (commands use the same interface as selects)
+# Messages are passed through to Julia as you are used to seeing them in psql.
 julia> println(query(curs, """
     drop table if exists s; 
     drop table if exists news; 
@@ -204,8 +203,6 @@ julia> println(query(curs, """
 NOTICE:  table "news" does not exist, skipping
 INFO: SELECT 10 10
 0x0 DataFrames.DataFrame
-
-# Messages are passed through to Julia as you are used to seeing them in psql.
 
 julia> df = query(curs, "select * from s")
 julia> copyto(curs, df, "s")
@@ -230,7 +227,7 @@ julia> type Point
        end
 
 # find the oid (600 in this case) in the pg_type table in Postgres.
-# Then instance the type
+# Then instance the type.
 julia> base_types[600] = PostgresType{Point}(:point, Point(0, 0))
 point -> Point
 
@@ -274,8 +271,8 @@ julia> query(curs, "select 1 from generate_series(1, (10^9)::int)")
 # oops; this will take forever
 ^CINFO: canceling statement due to user request
 ERROR: PostgresError: No results to fetch
- in fetch at /home/crow/.julia/v0.4/Postgres/src/postgres.jl:383
-  in query at /home/crow/.julia/v0.4/Postgres/src/postgres.jl:405
+ in fetch at /home/xxx/.julia/v0.4/Postgres/src/postgres.jl:383
+  in query at /home/xxx/.julia/v0.4/Postgres/src/postgres.jl:405
 
 #no need to chase down zombie process with ps or top :) :)
 ```

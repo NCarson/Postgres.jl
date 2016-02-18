@@ -1,6 +1,6 @@
 
 library(RPostgreSQL)
-drv = postgresqlInitDriver(fetch.default.rec=10**5, force.reload=T)
+drv = postgresqlInitDriver()
 conn= dbConnect(drv, dbname='postgres', host='localhost')
 
 for (i in 1:10 ) {
