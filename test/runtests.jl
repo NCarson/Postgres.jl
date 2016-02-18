@@ -24,6 +24,8 @@ end
 
 function setup_db(curs::P.PostgresCursor)
     queries = [
+        """drop table if exists newtable;""",
+
         """drop type if exists enum_test cascade;
         create type enum_test as enum ('happy', 'sad');""",
 
@@ -74,6 +76,9 @@ suppress = IOBuffer()
 #basic conection
 @test_throws P.PostgresError dbconnect("julia_test", "/dev/null/")
 conn = dbconnect()
+#try other ways to connect
+conn = connect(P.PostgresServer, "postgresql://localhost/julia_test")
+conn = connect(P.PostgresServer, "", "julia_test", "localhost", "", "")
 version = versioninfo(conn)
 @test version[:protocol] == v"3.0.0"
 print(suppress, conn)
@@ -95,6 +100,7 @@ P.commit!(curs)
 
 # close connnection so the connection will find the new user defined types.
 close(curs)
+print(suppress, curs)
 close(conn)
 @test P.status(conn) == :not_connected
 @test_throws P.PostgresError P.query(curs, "select 1")

@@ -307,26 +307,4 @@ base_types = Dict(
 
 base_types_byname = Dict([(t[2].name, t[2]) for t in base_types])
 
-# extension example
-import Base: ==
-type Point
-    x::Float64
-    y::Float64
-end
-
-function ==(this::Point, other::Point)
-    return this.x==other.x && this.y==other.y
-end
-
-base_types[600] = PostgresType{Point}(:point, Point(0, 0))
-
-function unsafe_parse{T <: Point}(::PostgresType{T}, value::UTF8String)
-    x, y = split(value, ",")
-    x = parse(Float64, x[2:end])
-    y = parse(Float64, y[1:end-1])
-    Point(x, y)
-end
-
-PostgresValue{T <: Point}(val::T) =
-    PostgresValue{T}(base_types[600], "($(val.x),$(val.y))")
 

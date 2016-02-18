@@ -127,7 +127,7 @@ end
 Uses dsn string interface to connect to the Postgres server.
 """
 function Base.connect(::Type{PostgresServer}, dsn::AbstractString)
-    ptr = Nullable(Libpq.connnect(dsn))
+    ptr = Nullable(Libpq.PQconnectdb(dsn))
     finalize_connect(ptr)
 end
 
@@ -300,9 +300,12 @@ Base.done(curs::PostgresCursor, x) = curs.finished
 ################################################################################
 #####  Execute
 
+#XXX Why do I not get notifies for these?
+#    Maybe psql returns the message instead of the server?
 function _transaction!(curs::PostgresCursor, cmd::AbstractString) 
     ptr = require_connection(curs.conn)
     res = Libpq.interuptable_exec(ptr, cmd)
+    Results.check_status(res)
     Libpq.PQclear(res)
     nothing
 end

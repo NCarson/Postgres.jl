@@ -90,8 +90,9 @@ function check_status(p::Ptr{PGresult})
         error("unknown status $s, $msg")
 
     elseif code == :fatal_error
-        throw(PostgresServerError(PostgresResultInfo(p)))
+        info = PostgresResultInfo(p)
         Libpq.PQclear(p)
+        throw(PostgresServerError(info))
     end
     code
 end
