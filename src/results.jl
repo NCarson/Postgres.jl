@@ -58,6 +58,7 @@ const notice_callback_ptr = cfunction(
                                 Ptr{Void},
                                 (Ptr{Void}, Ptr{PGresult},))
 
+"""Errors that propigate from the Postgres server."""
 type PostgresServerError <: DatabaseServerError
     info::PostgresResultInfo
 end
@@ -71,6 +72,7 @@ end
 ################################################################################
 #####  Result
 
+"""Interface type to retrieve values from the server."""
 type PostgresResult
     types::Vector{AbstractPostgresType}
     colnames::Vector{UTF8String}
@@ -88,7 +90,6 @@ function check_status(p::Ptr{PGresult})
         error("unknown status $s, $msg")
 
     elseif code == :fatal_error
-        println(PostgresResultInfo(p))
         throw(PostgresServerError(PostgresResultInfo(p)))
         Libpq.PQclear(p)
     end
@@ -124,6 +125,7 @@ function Base.show(io::IO, r::PostgresResult)
     print(io, "$(r.nrows)x$(r.ncols){$t} PostgresResult")
 end
 
+"""Frees resources held by server."""
 function close(r::PostgresResult)
     if !isnull(r.ptr)
         Libpq.PQclear(get(r.ptr))
@@ -157,6 +159,8 @@ function unsafe_column{T}(
     end
 end
 
+"""`column(result, col)`
+Returns a DataArray of the given column number."""
 function column(result::PostgresResult, col::Int)
     if !(1 <= col <= result.ncols)
         throw(BoundsError(result, (row, col)))
@@ -164,6 +168,8 @@ function column(result::PostgresResult, col::Int)
     unsafe_column(get(result.ptr), col, result.nrows, result.types[col])
 end
 
+"""`row(result, row)`
+Returns a Vector{Any} of the given row number."""
 function row(result::PostgresResult, row::Int)
     #tuple([result[row,col] for col in (1:result.ncols)] ...)
     v = Vector{Any}(result.ncols)

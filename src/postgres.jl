@@ -1,11 +1,12 @@
 
 
-#import Base: connect, close, getindex, isopen, show, start, next, done, length, isempty
-
 ################################################################################
 #####  
 
+"""DBI interface type needed to start a connection to the Postgres server."""
 type PostgresServer <: DatabaseInterface end
+
+"""Errors that propigate in Julia."""
 type PostgresError <: DatabaseError
     msg::AbstractString
 end
@@ -17,7 +18,9 @@ Base.showerror(io::IO, err::PostgresError) =
 #####   Connection
 
 global _last_connection = nothing
+global _connection_count = 0
 
+"""Communicater for Julia and Postgres."""
 type PostgresConnection <: DatabaseConnection
     ptr::ConnPtr
     pgtypes::Dict{Int, AbstractPostgresType}
@@ -45,6 +48,7 @@ function status(ptr::ConnPtr)
     end
     status
 end
+"""Returns libpq connection status given a connection."""
 status(conn::PostgresConnection) = status(conn.ptr)
 
 function require_connection(ptr::ConnPtr)
@@ -64,7 +68,8 @@ function require_connection(conn::PostgresConnection)
     get(conn.ptr)
 end
 
-function close(conn::PostgresConnection)
+"""Closes the connection and releases any memory that the server is holding."""
+function Base.close(conn::PostgresConnection)
     if !isnull(conn.ptr)
         require_connection(conn.ptr)
         Libpq.PQfinish(get(conn.ptr))
@@ -75,6 +80,7 @@ function close(conn::PostgresConnection)
 end
 
 function finalize_connect(ptr::ConnPtr)
+    global _connection_count += 1
     require_connection(ptr)
     conn = PostgresConnection(ptr, base_types)
     conn.pgtypes = merge(
@@ -83,12 +89,17 @@ function finalize_connect(ptr::ConnPtr)
         fetch_enum_types(conn))
 
     # last arg is id for threading etc.
-    Libpq.PQsetNoticeReceiver(get(ptr), Results.notice_callback_ptr, C_NULL)
+    p = Ref{Cint}(_connection_count)
+    Libpq.PQsetNoticeReceiver(get(ptr), Results.notice_callback_ptr, p)
     global _last_connection = conn
     finalizer(conn, close)
     conn
 end
 
+"""`connect(PostgresServer, user, db, host, passwd, port)`
+Connects to a Postgres server instance.
+
+Empty strings will cause the server to fill in default paramaters."""
 function Base.connect(::Type{PostgresServer},
                       user::AbstractString,
                       db::AbstractString,
@@ -100,6 +111,9 @@ function Base.connect(::Type{PostgresServer},
     finalize_connect(Nullable(ptr))
 end
 
+"""`connect(PostgresServer, dict)`
+Convenience method to connect where missing values will be filled in by server.
+"""
 function Base.connect(::Type{PostgresServer}, d::Dict)
     user = get(d, :user, "")
     db = get(d, :db, "")
@@ -109,13 +123,18 @@ function Base.connect(::Type{PostgresServer}, d::Dict)
     Base.connect(PostgresServer, user, db, host, passwd, port)
 end
 
+"""`connect(PostgresServer, dsn)`
+Uses dsn string interface to connect to the Postgres server.
+"""
 function Base.connect(::Type{PostgresServer}, dsn::AbstractString)
     ptr = Nullable(Libpq.connnect(dsn))
     finalize_connect(ptr)
 end
 
-isopen(conn::PostgresConnection) = status(conn.ptr) == :ok
+"""Returns if the connection is ok."""
+Base.isopen(conn::PostgresConnection) = status(conn.ptr) == :ok
 
+"""Returns server, libpq, and libpq protocol version numbers."""
 function Base.versioninfo(conn::PostgresConnection)
     function getv(v)
         v = string(v)
@@ -201,6 +220,7 @@ end
 
 abstract PostgresCursor <: DatabaseCursor
 
+"""Standard DBI type cursor that retrieves all the results at once."""
 type BufferedPostgresCursor <: PostgresCursor
     conn::PostgresConnection
     result::Nullable{PostgresResult}
@@ -208,6 +228,9 @@ type BufferedPostgresCursor <: PostgresCursor
     finished::Bool
 end
 
+"""Paged DBI type cursor that retrieves up to a maximum size of records.
+
+Multiple fetches will keep returning a fixed size until an empty set is returned."""
 type StreamedPostgresCursor <: PostgresCursor
     conn::PostgresConnection
     result::Nullable{PostgresResult}
@@ -234,6 +257,11 @@ function Base.show(io::IO, curs::PostgresCursor)
         * "\n\t$(curs.result)$p$s)")
 end
 
+"""`cursor(conn, [page_size])`
+Returns a PostgresCursor given a connection.
+
+If page_size is > 0 a StreamedPostgresCursor will be returned else a BufferedPostgresCursor.
+"""
 function cursor(conn::PostgresConnection, page_size=0)
     if page_size > 0
         return StreamedPostgresCursor(
@@ -254,7 +282,9 @@ function cursor(conn::PostgresConnection, page_size=0)
 end
 
 #XXX this would be better to put closer to result or rename
-function close(curs::PostgresCursor)
+"""`close(cursor)`
+Closes and frees any results associated with the cursor."""
+function Base.close(curs::PostgresCursor)
     if  (   !isnull(curs.result)
             && Libpq.PQstatus(get(curs.conn.ptr)) == :ok
         )
@@ -272,29 +302,33 @@ Base.done(curs::PostgresCursor, x) = curs.finished
 
 function _transaction!(curs::PostgresCursor, cmd::AbstractString) 
     ptr = require_connection(curs.conn)
-    res = Libpq.PQexec(ptr, cmd)
+    res = Libpq.interuptable_exec(ptr, cmd)
     Libpq.PQclear(res)
     nothing
 end
 
+"""Begins a transaction in the session."""
 begin_!(curs::PostgresCursor) = _transaction!(curs, "begin")
+"""Commits a transaction in the session."""
 commit!(curs::PostgresCursor) = _transaction!(curs, "commit")
+"""Rollbacks a bad transaction in the session."""
 rollback!(curs::PostgresCursor) = _transaction!(curs, "rollback")
 
 function _execute(curs::BufferedPostgresCursor, sql::AbstractString)
-    Libpq.PQexec(get(curs.conn.ptr), sql)
+    Libpq.interuptable_exec(get(curs.conn.ptr), sql)
 end
 
 function _execute(curs::StreamedPostgresCursor, sql::AbstractString)
     #maybe should be an error?
     if !curs.finished
-        commit(curs)
+        commit!(curs)
     end
     sql = "begin; declare $(curs.name) cursor for $sql"
-    ptr = Libpq.PQexec(get(curs.conn.ptr), sql)
+    ptr = Libpq.interuptable_exec(get(curs.conn.ptr), sql)
     ptr
 end
 
+"""Executes a query and returns a PostgresResult."""
 function execute(curs::PostgresCursor, sql::AbstractString)
     
     require_connection(curs.conn.ptr)
@@ -303,11 +337,16 @@ function execute(curs::PostgresCursor, sql::AbstractString)
     end
     s = time()
     ptr = _execute(curs, sql)
-    curs.finished = false
-    curs.result = PostgresResult(ptr, curs.conn.pgtypes)
-    curs.query_time = Nullable{QueryTime}(QueryTime(time() - s, sql))
-    finalizer(curs, close)
-    get(curs.result)
+    #if statement was canceled by user
+    if ptr == nothing
+        nothing
+    else
+        curs.finished = false
+        curs.result = PostgresResult(ptr, curs.conn.pgtypes)
+        curs.query_time = Nullable{QueryTime}(QueryTime(time() - s, sql))
+        finalizer(curs, close)
+        get(curs.result)
+    end
 end
 
 
@@ -328,16 +367,17 @@ function _fetch!(curs::StreamedPostgresCursor)
     end
 
     sql = "fetch forward $(curs.page_size) from $(curs.name)"
-    ptr = Libpq.PQexec(get(curs.conn.ptr), sql)
+    ptr = Libpq.interuptable_exec(get(curs.conn.ptr), sql)
     curs.result = PostgresResult(ptr, curs.conn.pgtypes)
     if (get(curs.result).nrows <= 0)
-        commit(curs)
+        commit!(curs)
         curs.finished = true
         #close(curs)
     end
     nothing
 end
 
+"""Fetches the cursors' last result into a `DataFrame` and then frees resources."""
 function Base.fetch(curs::PostgresCursor)
 
     _fetch!(curs)
@@ -359,6 +399,7 @@ end
 ################################################################################
 #####  Select
 
+"""Executes and and fetches a query."""
 function query(curs::PostgresCursor, sql::AbstractString)
     execute(curs, sql)
     return fetch(curs)
@@ -367,6 +408,7 @@ end
 ################################################################################
 #####  Escape
 
+"""Escapes unsanitized user input."""
 function escape_value(conn::PostgresConnection, s::AbstractString)
     p = require_connection(conn)
     ptr = Libpq.PQescapeLiteral(p, s, length(s))
@@ -418,15 +460,16 @@ writecopy(io::IO, df::DataFrame) = writecopy(io, DataArray(df))
 
 function error_message(conn::PostgresConnection)
     ptr = require_connection(conn)
-    #FIXME free
     return utf8(PQerrorMessage(ptr))
 end
 
 # its copy from in PG but relatively were copying to
 function copyto(curs::PostgresCursor, s::AbstractString, table::AbstractString)
+
+
     p = require_connection(curs.conn)
-    res = Libpq.PQexec(p, "copy $table from stdin")
-    code = check_status(res)
+    res = Libpq.interuptable_exec(p, "copy $table from stdin")
+    code = Results.check_status(res)
     if (code != :copy_in)
         close(res)
         throw(PostgresError("unhandled state $code"))
@@ -444,8 +487,34 @@ function copyto(curs::PostgresCursor, s::AbstractString, table::AbstractString)
     result
 end
 
-function copyto(curs::PostgresCursor, df::DataFrame, table::AbstractString)
+"""`copyto(curs, dataframe, tablename, [allownew])`
+Fast copying of a dataframe into a Postgres table.
+
+If table if not found and allownew is false an error will be thrown.
+If table is not found and allownew is true a new table will be created."""
+function copyto(curs::PostgresCursor, df::DataFrame, table::AbstractString,
+                allownew=false) 
+
+    found = table ∈ query(curs, "select tablename from pg_tables")[1]
+    if !found && !allownew
+        throw(PostgresError("table '$table' not found in database"))
+    elseif !found
+        info("table '$table' not found in database. creating ...")
+        query(curs, tabledef(df, table))
+    end
+
     buffer = readall(writecopy(IOBuffer(), df))
     copyto(curs, buffer, table)
+end
+
+function tabledef(df::DataFrame, name::AbstractString)
+    types = Types.pgtypes(df)
+    defs = AbstractString[]
+    for col in 1:size(df)[2]
+       n = df.colindex.names[col]
+       kind = types[col].name
+       push!(defs, "\t$n\t\t$kind")
+    end
+    "create table $name (\n$(join(defs, ",\n"))\n);"
 end
 

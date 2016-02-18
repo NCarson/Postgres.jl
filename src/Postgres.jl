@@ -1,14 +1,33 @@
 __precompile__()
+
 module Postgres
 
     using DataFrames
-    export  PostgresServer
+    export  PostgresServer,
+            PostgresError,
+            PostgresServerError,
+            PostgresConnection,
+            PostgresCursor,
+            BufferedPostgresCursor,
+            StreamedPostgresCursor,
+            PostgresResult,
+
+            query,
+            status,
+            cursor,
+            execute,
+            fetch,
+            begin_!,
+            commit!,
+            rollback!,
+            escape_value,
+            copyto
+
 
     #####   interface stub
     # things the developer does not want you to do 
     # e.g. call select on a closed connection
     abstract DatabaseError <: Exception
-    typealias Buffering Union{Val{:buffered}, Val{:streamed}}
     abstract DatabaseInterface
     abstract DatabaseConnection
 
@@ -29,6 +48,7 @@ module Postgres
                 PostgresType,
                 PostgresDomainType,
                 PostgresEnumType,
+                PostgresValue,
                 unsafe_parse,
                 naval
     end
@@ -43,7 +63,10 @@ module Postgres
         using ..Types
         include("results.jl")
 
-        export PostgresResult, check_status
+        export PostgresResult,
+            PostgresServerError,
+            column,
+            row
     end
 
     using .Results

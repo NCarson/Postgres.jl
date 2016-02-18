@@ -1,10 +1,10 @@
 
-#using Postgres
-include("../src/Postgres.jl")
-import Postgres
-
 using Base.Test
+using DataFrames
+
+import Postgres
 P = Postgres
+naval = P.Types.naval
 
 function dbconnect(db="julia_test", host="localhost")
     d = Dict(:db=>db, :host=>host)
@@ -63,7 +63,7 @@ function setup_db(curs::P.PostgresCursor)
 end
 
 function do_plsql(curs::P.PostgresCursor, cmd::AbstractString)
-    P.query(curs, """
+    query(curs, """
     do
     \$\$begin
     $cmd;
@@ -74,30 +74,28 @@ suppress = IOBuffer()
 #basic conection
 @test_throws P.PostgresError dbconnect("julia_test", "/dev/null/")
 conn = dbconnect()
-version = P.versioninfo(conn)
+version = versioninfo(conn)
 @test version[:protocol] == v"3.0.0"
 print(suppress, conn)
 @test P.status(conn) == :ok
-@test P.isopen(conn)
+@test isopen(conn)
 curs = P.cursor(conn)
 print(suppress, curs)
 @test P.query(curs, "select 1")[1][1] == 1
-@test typeof(show(conn)) == Void
-@test typeof(show(curs)) == Void
 
 setup_db(curs)
 #transactions
 P.query(curs, "drop table if exists xxx")
 
-P.begin_(curs)
+P.begin_!(curs)
 P.query(curs, "create table xxx (a int); select * from xxx;")
-P.rollback(curs)
+P.rollback!(curs)
 @test_throws P.Results.PostgresServerError P.query(curs, "select * from xxx")
-P.commit(curs)
+P.commit!(curs)
 
 # close connnection so the connection will find the new user defined types.
-P.close(curs)
-P.close(conn)
+close(curs)
+close(conn)
 @test P.status(conn) == :not_connected
 @test_throws P.PostgresError P.query(curs, "select 1")
 
@@ -111,9 +109,10 @@ for t in values(P.Types.base_types)
     if t.name == :jlunknown
         continue
     end
-    val = P.query(curs, "select '$(P.Types.naval(t))'::$(t.name)")[1][1]
-    @test typeof(P.Types.naval(t)) == typeof(val)
-    @test P.Types.naval(t) == val
+    start = repr(P.Types.PostgresValue(naval(t)))
+    val = P.query(curs, "select $start")[1][1]
+    @test typeof(naval(t)) == typeof(val)
+    @test naval(t) == val
 end
 
 #extended types
@@ -130,6 +129,11 @@ df = P.query(curs, "select * from test")
 @test eltype(df[1]) == Float64
 @test eltype(df[2]) == Int
 @test eltype(df[3]) == UTF8String
+df[1, 1] = NA
+df[1, 2] = NA
+df[1, 3] = NA
+P.copyto(curs, df, "test")
+P.copyto(curs, df, "newtable", true)
 
 #escaping
 hi ="1;select 'powned'"
@@ -155,12 +159,11 @@ print(suppress, res)
 @test_throws BoundsError res[101, 5]
 for i in 1:length(res.types)
     t = res.types[i]
-    tt = typeof(P.Types.naval(t))
+    tt = typeof(naval(t))
     @test isa(res[1,i], Nullable{tt})
 end
 @test !isnull(res[1, 1])
 @test isnull(res[1, 2])
-
 
 #iteration
 curs = P.cursor(conn)

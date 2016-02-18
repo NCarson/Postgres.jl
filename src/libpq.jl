@@ -15,6 +15,7 @@ end
 
 abstract PGconn
 abstract PGresult
+abstract PGcancel
 
 typealias ResultPtr Nullable{Ptr{Libpq.PGresult}}
 typealias ConnPtr Nullable{Ptr{Libpq.PGconn}}
@@ -153,12 +154,16 @@ const error_state = Dict(
 @c Ptr{UInt8}   PQescapeLiteral (Ptr{PGconn}, Ptr{UInt8}, Cint) libpq
 #@c Ptr{UInt8} PQescapeIdentifier (Ptr{PGconn}, Ptr{UInt8}, Cint) libpq
 
+#### Canceling
+@c Ptr{PGcancel} PQgetCancel (Ptr{PGconn},) libpq
+@c Ptr{Void}     PQfreeCancel (Ptr{PGcancel}, ) libpq
+@c Cint          PQcancel (Ptr{PGcancel}, Ptr{UInt8}, Cint) libpq
+
 #### Misc
 @c Cint PQprotocolVersion (Ptr{PGconn},) libpq
 @c Cint PQserverVersion (Ptr{PGconn},) libpq
 @c Cint PQlibVersion (Ptr{Void},) libpq
 #@c Void PQreset (Ptr{PGconn},) libpq
-#@c Ptr{PGcancel} PQgetCancel (Ptr{PGconn},) libpq
 #@c PGTransactionStatusType PQtransactionStatus (Ptr{PGconn},) libpq
 #@c Ptr{Cuchar} PQescapeByteaConn (Ptr{PGconn}, Ptr{Cuchar}, Cint, Ptr{Cint}) libpq
 #@c Ptr{Cuchar} PQunescapeBytea (Ptr{Cuchar}, Ptr{Cint}) libpq
@@ -178,3 +183,19 @@ function bootstrap_query(ptr::Ptr{PGconn}, query::AbstractString)
     return a
 end
 
+# not sure how to test
+function interuptable_exec(ptr::Ptr{PGconn}, query::AbstractString)
+    try
+        res = PQexec(ptr, query)
+    catch InteruptException
+        cancel = PQgetCancel(ptr)
+        msg = Array(UInt8, 256)
+        status = PQcancel(cancel, msg, sizeof(msg))
+        if status != 1
+            error("cancel failed: $(bytestring(msg))")
+        end
+        PQfreeCancel(cancel)
+        info("canceling statement due to user request")
+        nothing
+    end
+end

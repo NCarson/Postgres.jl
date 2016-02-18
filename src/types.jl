@@ -1,4 +1,5 @@
 
+using DataFrames
 
 macro c(ret_type, func, arg_types, lib)
     local args_in = Any[ symbol(string('a',x)) for x in 1:length(arg_types.args) ]
@@ -123,6 +124,76 @@ end
 #    DateTime(value[1:end-3], "y-m-d H:M:S.s")
 #end
 
+###########################################################################
+### value converters
+
+type PostgresValue{T}
+    pgtype::AbstractPostgresType
+    value::UTF8String
+end
+function Base.show(io::IO, val::PostgresValue)
+    print(io, val.value)
+end
+function Base.showall(io::IO, val::PostgresValue)
+    esc = val.pgtype.name == :bytea ? "e" : ""
+    print(io, "$esc'$(val.value)'::$(val.pgtype.name)")
+end
+
+PostgresValue(val) =
+    PostgresValue(base_types_byname[:text]utf8, utf8(string(val)))
+
+PostgresValue{T <: AbstractString}(val::T) =
+    PostgresValue{T}(base_types_byname[:text], utf8(string(val)))
+
+PostgresValue{T <: Int16}(val::T) =
+    PostgresValue{T}(base_types_byname[:int2], utf8(string(val)))
+
+PostgresValue{T <: Int32}(val::T) =
+    PostgresValue{T}(base_types_byname[:int4], utf8(string(val)))
+
+PostgresValue{T <: Int64}(val::T) =
+    PostgresValue{T}(base_types_byname[:int8], utf8(string(val)))
+
+PostgresValue{T <: Float32}(val::T) =
+    PostgresValue{T}(base_types_byname[:float4], utf8(string(val)))
+
+PostgresValue{T <: Float64}(val::T) =
+    PostgresValue{T}(base_types_byname[:float8], utf8(string(val)))
+
+PostgresValue{T <: BigFloat}(val::T) =
+    PostgresValue{T}(base_types_byname[:numeric], utf8(string(val)))
+
+PostgresValue{T <: Date}(val::T) =
+    PostgresValue{T}(base_types_byname[:date], utf8(string(val)))
+
+PostgresValue{T <: Bool}(val::T) =
+    PostgresValue{T}(base_types_byname[:bool], utf8(string(val)))
+ 
+function PostgresValue{T <: Vector{UInt8}}(val::T)
+    v = "\\\\x" * join(map(x -> repr(x)[3:end], val))
+    PostgresValue{T}(base_types_byname[:bytea], v)
+end
+
+function PostgresValue{T <: BitVector}(val::T)
+    v = join(map(x -> x ? "1" : "0", val))
+    PostgresValue{T}(base_types_byname[:varbit], v)
+end
+
+function pgtypes(df::DataFrame)
+    a = AbstractPostgresType[]
+    for i in 1:size(df)[2]
+        if issubtype(typeof(df[i]), PooledDataArray)
+            val = df[i].pool[1]
+        else
+            val = df[i].data[1]
+        end
+        push!(a, PostgresValue(val).pgtype)
+    end
+    a
+end
+
+###########################################################################
+### instances
 
 # Oids have to be unique against the _whole_ database,
 # while the name of a type only has to be unique per namespace.
@@ -140,7 +211,7 @@ base_types = Dict(
     0            =>  PostgresType{UTF8String}(:jlunknown, UTF8String("∅")),
 
     16           =>  PostgresType{Bool}(:bool, false),
-    17           =>  PostgresType{Vector{UInt8}}(:bytea,Vector{UInt8}()),
+    17           =>  PostgresType{Vector{UInt8}}(:bytea, UInt8[0]),
 
     #### BITS
     1560         =>  PostgresType{BitVector}(:bit, BitVector([false])),
@@ -236,48 +307,26 @@ base_types = Dict(
 
 base_types_byname = Dict([(t[2].name, t[2]) for t in base_types])
 
-type PostgresValue{T}
-    pgtype::AbstractPostgresType
-    value::UTF8String
-end
-function Base.show(io::IO, val::PostgresValue)
-    print(val.value)
-end
-
-PostgresValue{T <: AbstractString}(val::T) =
-    PostgresValue{T}(base_types_byname[:text], utf8(val))
-
-PostgresValue{T <: Int16}(val::T) =
-    PostgresValue{T}(base_types_byname[:int2], utf8(string(val)))
-
-PostgresValue{T <: Int32}(val::T) =
-    PostgresValue{T}(base_types_byname[:int4], utf8(string(val)))
-
-PostgresValue{T <: Int64}(val::T) =
-    PostgresValue{T}(base_types_byname[:int8], utf8(string(val)))
-
-PostgresValue{T <: Float32}(val::T) =
-    PostgresValue{T}(base_types_byname[:float4], utf8(string(val)))
-
-PostgresValue{T <: Float64}(val::T) =
-    PostgresValue{T}(base_types_byname[:float8], utf8(string(val)))
-
-PostgresValue{T <: BigFloat}(val::T) =
-    PostgresValue{T}(base_types_byname[:numeric], utf8(string(val)))
-
-PostgresValue{T <: Date}(val::T) =
-    PostgresValue{T}(base_types_byname[:date], utf8(string(val)))
-
-PostgresValue{T <: Bool}(val::T) =
-    PostgresValue{T}(base_types_byname[:bool], utf8(string(val)))
- 
-function PostgresValue{T <: Vector{UInt8}}(val::T)
-    v = "\\x" * join(map(x -> repr(x)[3:end], val))
-    PostgresValue{T}(base_types_byname[:bytea], v)
+# extension example
+import Base: ==
+type Point
+    x::Float64
+    y::Float64
 end
 
-function PostgresValue{T <: BitVector}(val::T)
-    v = join(map(x -> x ? "1" : "0", val))
-    PostgresValue{T}(base_types_byname[:varbit], v)
+function ==(this::Point, other::Point)
+    return this.x==other.x && this.y==other.y
 end
+
+base_types[600] = PostgresType{Point}(:point, Point(0, 0))
+
+function unsafe_parse{T <: Point}(::PostgresType{T}, value::UTF8String)
+    x, y = split(value, ",")
+    x = parse(Float64, x[2:end])
+    y = parse(Float64, y[1:end-1])
+    Point(x, y)
+end
+
+PostgresValue{T <: Point}(val::T) =
+    PostgresValue{T}(base_types[600], "($(val.x),$(val.y))")
 
