@@ -7,7 +7,7 @@
 * Transaction support.
 * DataFrame can be dumped to database via *copyto*.
     On-the-fly table creation supported.
-* Ctl-C cancels queries at the server.
+* `Ctl-C` cancels queries at the server.
 * *Most* 'plain types' supported by comparable Julia type.
 * Automatic support for user-defined enums and domains.
     Enum type columns automatically converted to *PooledDataArray*.

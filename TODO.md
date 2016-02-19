@@ -3,7 +3,7 @@
 
 ## Good Things TODO:
 * Support more plain types.
-* Add @sql_str so you could do something like `sql"select * from x where stuff=$unsafe_user_input"`.
+* Add `@sql_str` so you could do something like `sql"select * from x where stuff=$unsafe_user_input"`.
 * Add macro for adding custom type handling.
 * Parallelize column fetching.
 * Type rows with something like *NamedTuple*.
@@ -17,8 +17,9 @@
 ## Things to Shrug Indifferently At:
 * Supporting Prepared statements.
     Postgres supports prepared statements at the sql level.
-    ```PREPARE fooplan (int, text, bool, numeric) AS
-        INSERT INTO foo VALUES($1, $2, $3, $4);
+    ```
+        PREPARE fooplan (int, text, bool, numeric) AS
+            INSERT INTO foo VALUES($1, $2, $3, $4);
         EXECUTE fooplan(1, 'Hunter Valley', 't', 200.00);
     ```
 * Libpq event interface.

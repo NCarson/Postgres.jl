@@ -176,7 +176,7 @@ Enum types will use PooledDataArrays!
 ```julia
 julia> user_input="1';select 'powned';"
 julia> escape_value(conn, user_input)
-"'1;select ''powned'''"
+"'1'';select ''powned'';'"
 ```
 
 ### Error Info
