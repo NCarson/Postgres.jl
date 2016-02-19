@@ -226,7 +226,6 @@ INFO: COPY 10 10
 0x0{} PostgresResult
 ```
 
-
 ### Custom Types
 ```julia
 julia> using Postgres.Types
