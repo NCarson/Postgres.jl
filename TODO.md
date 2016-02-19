@@ -6,7 +6,7 @@
 * Add `@sql_str` so you could do something like `sql"select * from x where stuff=$unsafe_user_input"`.
 * Add macro for adding custom type handling.
 * Parallelize column fetching.
-* Type rows with something like *NamedTuple*.
+* Type rows with something like `NamedTuple`.
 * Add more tests.
 
 ## Things TODO:

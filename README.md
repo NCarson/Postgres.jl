@@ -1,6 +1,6 @@
 
 # Postgres
-## Database Interface for PostgreSQL and Julia
+## Postgres Database Interface for the Julia language.
 
 ### Basic Usage
 ```julia
