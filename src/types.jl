@@ -105,7 +105,8 @@ function unsafe_parse{T <: BigFloat}(::PostgresType{T}, value::UTF8String)
 end
 
 function unsafe_parse{T <: Date}(::PostgresType{T}, value::UTF8String)
-    Date(DateTime(value, "y-m-d"))
+    y, m, d = split(value, "-")
+    Date(parse(Int, y), parse(Int, m), parse(Int, d))
 end
 
 function unsafe_parse{T <: Bool}(::PostgresType{T}, value::UTF8String)

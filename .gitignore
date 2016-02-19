@@ -3,3 +3,4 @@
 *.jl.mem
 stub.jl
 readme_test.jl
+*.swp
