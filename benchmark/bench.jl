@@ -3,7 +3,7 @@ using Postgres
 P = Postgres
 naval = P.Types.naval
 
-conn = connect(PostgresServer, Dict(:db=>"julia_test", :host=>"localhost"))
+conn = connect(PostgresServer, db="julia_test", host="localhost")
 curs = cursor(conn)
 query(curs, "select 1")
 

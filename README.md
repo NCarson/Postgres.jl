@@ -5,7 +5,7 @@
 ### Basic Usage
 ```julia
 julia> using Postgres
-julia> conn = connect(PostgresServer, Dict(:db=>"julia_test", :host=>"localhost"))
+julia> conn = connect(PostgresServer, db="julia_test", host="localhost")
 julia> #conn = connect(PostgresServer, "postgresql://localhost/julia_test")
 julia> #empty strings will cause the server to use defaults.
 julia> #connect(interface, user, db, host, passwd, port)
@@ -257,7 +257,7 @@ Postgres.Types.PostgresValue
 #reload conn so it picks up the new type
 julia> close(conn)
 PostgresConnection(@ 0 : not_connected)
-julia> conn = connect(PostgresServer, Dict(:db=>"julia_test", :host=>"localhost"))
+julia> conn = connect(PostgresServer, db="julia_test", host="localhost")
 PostgresConnection(@ 0x0b41b818 : ok)
 julia> curs = cursor(conn)
 Postgres.BufferedPostgresCursor(

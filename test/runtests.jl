@@ -5,16 +5,16 @@ using DataFrames
 import Postgres
 P = Postgres
 naval = P.Types.naval
+TESTDB = "julia_test"
 
-function dbconnect(db="julia_test", host="localhost")
-    d = Dict(:db=>db, :host=>host)
+function first_conn(;args...)
     conn = nothing
     try
-        conn = P.connect(P.PostgresServer, d)
-    catch err
+        conn = P.connect(P.PostgresServer; args...)
+    catch err PostgresError
         if (ismatch(r"does not exist$", err.msg))
             run(`createdb julia_test`)
-            conn = P.connect(P.PostgresServer, d)
+            conn = P.connect(P.PostgresServer; args...)
         else
             throw(err)
         end
@@ -74,11 +74,11 @@ end
 suppress = IOBuffer()
 
 #basic conection
-@test_throws P.PostgresError dbconnect("julia_test", "/dev/null/")
-conn = dbconnect()
+@test_throws P.PostgresError first_conn(db=TESTDB, host="/dev/null/")
+conn = first_conn(db=TESTDB, host="localhost")
 #try other ways to connect
 conn = connect(P.PostgresServer, "postgresql://localhost/julia_test")
-conn = connect(P.PostgresServer, "", "julia_test", "localhost", "", "")
+conn = connect(P.PostgresServer, "", TESTDB, "localhost", "", "")
 version = versioninfo(conn)
 @test version[:protocol] == v"3.0.0"
 print(suppress, conn)
@@ -105,7 +105,7 @@ close(conn)
 @test P.status(conn) == :not_connected
 @test_throws P.PostgresError P.query(curs, "select 1")
 
-conn = dbconnect()
+conn = first_conn(db=TESTDB, host="localhost")
 curs = P.cursor(conn)
 
 #round trip types
@@ -189,5 +189,13 @@ P.execute(streamed, "select 1 from generate_series(1, 23)")
 P.execute(curs, "select 1 from generate_series(1, 23)")
 @test count_iters(curs) == 1
 @test count_iters(curs) == nothing
+
+close(curs)
+close(streamed)
+close(conn)
+# this will fail if PG still thinks were connected
+#FIXME one connection still open
+#run(`dropdb julia_test`)
+
 
 

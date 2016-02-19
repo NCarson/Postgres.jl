@@ -111,16 +111,25 @@ function Base.connect(::Type{PostgresServer},
     finalize_connect(Nullable(ptr))
 end
 
-"""`connect(PostgresServer, dict)`
+"""`connect(PostgresServer, args...)`
 Convenience method to connect where missing values will be filled in by server.
 """
-function Base.connect(::Type{PostgresServer}, d::Dict)
-    user = get(d, :user, "")
-    db = get(d, :db, "")
-    host = get(d, :host, "")
-    passwd = get(d, :passwd, "")
-    port = get(d, :port, "")
-    Base.connect(PostgresServer, user, db, host, passwd, port)
+function Base.connect(::Type{PostgresServer}; args...)
+
+    allowed = (:user, :db, :host, :passwd, :port)
+    d = Dict(args)
+    for k in keys(d)
+        if !(k in allowed)
+             throw(PostgresError("unknown keyword argument '$k'"))
+         end
+    end
+    Base.connect(PostgresServer, 
+        get(d, :user, ""),
+        get(d, :db, ""), 
+        get(d, :host, ""),
+        get(d, :passwd, ""), 
+        get(d, :port, "")
+    )
 end
 
 """`connect(PostgresServer, dsn)`
